@@ -77,7 +77,8 @@ Image get_image_path(String *line)
 
 typedef enum {
     TYPE_TEXTURE,
-    TYPE_TEXT
+    TYPE_TEXT,
+    TYPE_COUNT
 } RenderObjectType;
 
 typedef struct {
@@ -95,6 +96,8 @@ char *filename;
 #define MAX_RENDER_LIST_SIZE 256
 size_t render_list_index = 0;
 RenderObject render_list[MAX_RENDER_LIST_SIZE] = {0};
+
+#define FONT_SIZE 14
 
 Vector2 advance_cursor(Vector2 *cursor, int x, int y)
 {
@@ -122,12 +125,15 @@ void parse(char *content)
 
     StringList lines = {0};
     split(content, '\n', &lines);
+    Log(INFO, "Number of lines in md file: %zu", lines.count);
     for (size_t i = 0; i < lines.count; ++i) {
         String line = lines.data[i];
         while (line.count > 0) {
             skip_spaces(&line);
             char c = pop_char(&line);
             if (c == '!') {
+                Log(INFO, "Parsing an image");
+                // image
                 Image image = get_image_path(&line);
                 Texture2D texture = LoadTextureFromImage(image);
                 RenderObject obj = {
@@ -137,6 +143,18 @@ void parse(char *content)
                 add_to_render_list(obj, TYPE_TEXTURE);
                 advance_cursor(&cursor, texture.width, 0);
                 free(image.data);
+                break;
+            }
+            else {
+                // by exclusion, the rest is text
+                Log(INFO, "Parsing a text");
+                RenderObject obj = {
+                    .cursor = cursor,
+                    .text = strdup(line.data)
+                };
+                add_to_render_list(obj, TYPE_TEXT);
+                advance_cursor(&cursor, MeasureText(line.data, FONT_SIZE), 0);
+                break;
             }
         }
     }
@@ -162,17 +180,19 @@ int main(int argc, char **argv) {
     
     parse(content);
 
+    Log(INFO, "Number of render objects: %zu", render_list_index+1);
     while (!WindowShouldClose()) {
         BeginDrawing();
 
         for (size_t i = 0; i <= render_list_index; ++i) {
             Vector2 cursor_pos = (Vector2){render_list[i].cursor.x, render_list[i].cursor.y};
+            static_assert(TYPE_COUNT == 2 && "Missing 'RenderObjectType' in switch case");
             switch (render_list[i].type) {
             case TYPE_TEXTURE:
                 DrawTextureEx(render_list[i].texture, cursor_pos, 0.0, 1.0, WHITE);
                 break;
             case TYPE_TEXT:
-                TODO("TYPE_TEXT");
+                DrawText(render_list[i].text, cursor_pos.x, cursor_pos.y, FONT_SIZE, WHITE);
                 break;
             default:
                 ABORT("Unknown render object type");
