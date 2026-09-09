@@ -75,34 +75,51 @@ Image get_image_path(String *line)
     return image;
 }
 
-typedef struct {
-    Image *data;
-    size_t count;
-    size_t capacity;
-} ImageList;
+typedef enum {
+    TYPE_TEXTURE,
+    TYPE_TEXT
+} RenderObjectType;
 
 typedef struct {
-    Texture2D *data;
-    size_t count;
-    size_t capacity;
-} TexturesList;
+    Vector2 cursor;
+    union {
+        Texture2D texture;
+        char* text;
+    };
+    RenderObjectType type;
+} RenderObject;
 
-typedef struct {
-    float x;
-    float y;
-} Cursor;
 
 char *filename;
 
-// TODO: make a "cache" so the images are not loaded at every frame 
-//       OR
-//       do not make an immediate rendering (along with the parsing)
-void render(char *content)
-{
-    Cursor cursor = {0};
-    BeginDrawing();
+#define MAX_RENDER_LIST_SIZE 256
+size_t render_list_index = 0;
+RenderObject render_list[MAX_RENDER_LIST_SIZE] = {0};
 
-    // immediate parsing md file
+Vector2 advance_cursor(Vector2 *cursor, int x, int y)
+{
+    cursor->x += x;
+    cursor->y += y;
+    // TODO: check if y is at end of renderer width to render into another line
+    return *cursor;
+}
+
+void add_to_render_list(RenderObject obj, RenderObjectType type)
+{
+    if (render_list_index >= MAX_RENDER_LIST_SIZE) {
+        Log(WARN, "Maximum size of render list achieved. Item not added.");
+        return;
+    }
+    render_list[render_list_index] = obj;
+    render_list[render_list_index].type = type;
+    render_list_index += 1;
+}
+
+// immediate parsing md file
+void parse(char *content)
+{
+    Vector2 cursor = {0};
+
     StringList lines = {0};
     split(content, '\n', &lines);
     for (size_t i = 0; i < lines.count; ++i) {
@@ -113,14 +130,17 @@ void render(char *content)
             if (c == '!') {
                 Image image = get_image_path(&line);
                 Texture2D texture = LoadTextureFromImage(image);
-                DrawTextureEx(texture, (Vector2){cursor.x, cursor.y}, 0.0, 1.0, WHITE);
-                cursor.x += texture.width;
+                RenderObject obj = {
+                    .cursor = cursor,
+                    .texture = texture
+                };
+                add_to_render_list(obj, TYPE_TEXTURE);
+                advance_cursor(&cursor, texture.width, 0);
                 free(image.data);
             }
         }
     }
     split_free(&lines);
-    EndDrawing();
 }
 
 int main(int argc, char **argv) {
@@ -138,12 +158,28 @@ int main(int argc, char **argv) {
     char *content = read_entire_file(filename);
 
     InitWindow(800, 600, "MD Viewer");
-    SetTargetFPS(15);
+    SetTargetFPS(30);
     
-    render(content);
+    parse(content);
 
     while (!WindowShouldClose()) {
-        render(content);
+        BeginDrawing();
+
+        for (size_t i = 0; i <= render_list_index; ++i) {
+            Vector2 cursor_pos = (Vector2){render_list[i].cursor.x, render_list[i].cursor.y};
+            switch (render_list[i].type) {
+            case TYPE_TEXTURE:
+                DrawTextureEx(render_list[i].texture, cursor_pos, 0.0, 1.0, WHITE);
+                break;
+            case TYPE_TEXT:
+                TODO("TYPE_TEXT");
+                break;
+            default:
+                ABORT("Unknown render object type");
+            }
+        }
+
+        EndDrawing();
     }
 
     free(content);
