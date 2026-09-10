@@ -1,4 +1,4 @@
-#include <stdio.h>
+
 #include <string.h>
 
 #define AHB_LIB_IMPLEMENTATION
@@ -130,10 +130,10 @@ void parse(char *content)
         String line = lines.data[i];
         while (line.count > 0) {
             skip_spaces(&line);
-            char c = pop_char(&line);
+            char c = get_char(&line);
             if (c == '!') {
-                Log(INFO, "Parsing an image");
                 // image
+                c = pop_char(&line);
                 Image image = get_image_path(&line);
                 Texture2D texture = LoadTextureFromImage(image);
                 RenderObject obj = {
@@ -147,7 +147,7 @@ void parse(char *content)
             }
             else {
                 // by exclusion, the rest is text
-                Log(INFO, "Parsing a text");
+                Log(INFO, "Parsing a text: %s", line.data);
                 RenderObject obj = {
                     .cursor = cursor,
                     .text = strdup(line.data)
@@ -190,9 +190,12 @@ int main(int argc, char **argv) {
             switch (render_list[i].type) {
             case TYPE_TEXTURE:
                 DrawTextureEx(render_list[i].texture, cursor_pos, 0.0, 1.0, WHITE);
+                // DrawRectangleLines(cursor_pos.x, cursor_pos.y, render_list[i].texture.width, render_list[i].texture.height, MAGENTA);
                 break;
             case TYPE_TEXT:
+                printf("%s\n", render_list[i].text);
                 DrawText(render_list[i].text, cursor_pos.x, cursor_pos.y, FONT_SIZE, WHITE);
+                // DrawRectangleLines(cursor_pos.x, cursor_pos.y, MeasureText(render_list[i].text, FONT_SIZE), FONT_SIZE, MAGENTA);
                 break;
             default:
                 ABORT("Unknown render object type");
