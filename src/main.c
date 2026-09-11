@@ -95,7 +95,6 @@ typedef struct {
 
 
 char *filename;
-static float line_max_height = 0;
 
 #define MAX_RENDER_LIST_SIZE 256
 size_t render_list_index = 0;
@@ -107,15 +106,7 @@ Vector2 advance_cursor(Vector2 *cursor, int x, int y)
 {
     cursor->x += x;
     cursor->y += y;
-
-    // Log(INFO, "x: %f, y: %f\n", cursor->x, cursor->y);
-    if (cursor->x > WINDOW_WIDTH) {
-        cursor->x = 0;
-        cursor->y += line_max_height;
-        line_max_height = 0;
-        // Log(INFO, "BREAK LINE:\n  x: %f, y: %f\n", cursor->x, cursor->y);
-    }
-
+    if (cursor->x > WINDOW_WIDTH) cursor->x = 0;
     return *cursor;
 }
 
@@ -128,53 +119,55 @@ void add_to_render_list(RenderObject obj, RenderObjectType type)
     render_list[render_list_index] = obj;
     render_list[render_list_index].type = type;
     render_list_index += 1;
-
-    static_assert(TYPE_COUNT == 2 && "Missing 'RenderObjectType' in switch case");
-    switch (obj.type) {
-    case TYPE_TEXTURE:
-        if (obj.texture.height > line_max_height) line_max_height = obj.texture.height;
-        // Log(INFO, "Image added to render list");
-        break;
-    case TYPE_TEXT:
-        if (FONT_SIZE > line_max_height) line_max_height = FONT_SIZE;
-        // Log(INFO, "Text added to render list");
-        break;
-    default:
-        ABORT("Unknown render object type");
-    }
 }
 
 void break_line(char *text, Vector2 *cursor)
 {
-    float unit_size = MeasureText("M", FONT_SIZE);
-    float new_x = cursor->x;
+    Log(INFO, "text to print: %s", text);
     size_t i;
     for (i = 0; i < strlen(text); ++i) {
-        new_x += unit_size;
+        // TASK(20260911-094431): find a way to not dup the text
+        char *tmp = strdup(text);
+        tmp[i] = '\0';
+        float new_x = cursor->x + MeasureText(tmp, FONT_SIZE);
+        printf("  cursor x: %.1f, new_x: %.1f\n", cursor->x, new_x);
+        free(tmp);
         if (new_x >= WINDOW_WIDTH) break;
     }
     Log(INFO, "This line should be broken at index: %zu", i);
+    // go back to the first space if in middle of word
+    while (text[i] != ' ') {
+        i -= 1;
+    }
+    i++; // get rid of the space for the next line
 
     RenderObject obj2 = {
         .cursor = *cursor,
         .text = strdup(&text[i])
     };
+    Log(INFO, "text 2: %s", obj2.text);
 
     text[i] = '\0';
     RenderObject obj1 = {
         .cursor = *cursor,
         .text = strdup(text)
     };
+    Log(INFO, "text 1: %s", obj1.text);
+    Log(INFO, "cursor 1x: %f", obj1.cursor.x);
 
     add_to_render_list(obj1, TYPE_TEXT);
-    advance_cursor(cursor, MeasureText(&text[i], FONT_SIZE), 0);
+    // printf("  antes x: %f, y: %f\n", cursor->x, cursor->y);
+    advance_cursor(cursor, MeasureText(&text[i], FONT_SIZE), FONT_SIZE);
+    // printf("  depois x: %f, y: %f\n", cursor->x, cursor->y);
 
-    cursor->x = 0;
-    cursor->y += line_max_height;
     obj2.cursor = *cursor;
+    Log(INFO, "text 2: %s", obj2.text);
+    Log(INFO, "cursor 2x: %f", obj2.cursor.x);
 
     add_to_render_list(obj2, TYPE_TEXT);
+    // printf("  antes x: %f, y: %f\n", cursor->x, cursor->y);
     advance_cursor(cursor, MeasureText(text, FONT_SIZE), 0);
+    // printf("  depois x: %f, y: %f\n", cursor->x, cursor->y);
 }
 
 // immediate parsing md file
@@ -211,22 +204,23 @@ void parse(char *content)
             }
             else if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '1')) {
                 // text
+                // text rendering always begin in a new line on the cursor
+                RenderObject last = render_list[render_list_index - 1];
+                static_assert(TYPE_COUNT == 2 && "Missing 'RenderObjectType' in switch case");
+                switch (last.type) {
+                // TASK(20260911-094659): get the maximum height in all objects of the previous line
+                case TYPE_TEXTURE: cursor.y += last.texture.height; break; 
+                case TYPE_TEXT: cursor.y += FONT_SIZE; break;
+                default:
+                    ABORT("Unknown render object type");
+                }
+                cursor.x = 0;
+
                 float text_size_in_px = MeasureText(line.data, FONT_SIZE);
                 bool need_break = cursor.x + text_size_in_px > WINDOW_WIDTH; 
                 if (need_break) {
                     break_line(line.data, &cursor);
                 }
-
-                // need to put this into a loop until there's no need to brake line anymore
-
-
-                // RenderObject obj = {
-                //     .cursor = cursor,
-                //     .text = strdup(line.data)
-                // };
-                // add_to_render_list(obj, TYPE_TEXT);
-                // advance_cursor(&cursor, MeasureText(line.data, FONT_SIZE), 0);
-
                 break;
             }
             else {
@@ -274,6 +268,10 @@ int main(int argc, char **argv) {
 
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "MD Viewer");
     SetTargetFPS(30);
+
+    BeginDrawing();
+    ClearBackground(GetColor(0x181818FF));
+    EndDrawing();
     
     parse(content);
 
@@ -281,6 +279,15 @@ int main(int argc, char **argv) {
     bool draw_debug = false;
     while (!WindowShouldClose()) {
         BeginDrawing();
+
+        if (IsKeyPressed(KEY_F5)) {
+            // TASK(20260911-094144): reset state of application when F5 is pressed
+            content = read_entire_file(filename);
+            parse(content);
+        }
+        else if (IsKeyPressed(KEY_Q)) {
+            break;
+        }
 
         for (size_t i = 0; i <= render_list_index; ++i) {
             draw_object(render_list[i], draw_debug);
