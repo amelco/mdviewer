@@ -1,0 +1,40 @@
+name: Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install clang and X11 dev libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
+
+      - name: Compile mdviewer
+        run: |
+          clang -g \
+            -o mdviewer \
+            -Wall -Wextra \
+            -I./vendor/raylib-6.0_linux_amd64/include \
+            ./src/render.c \
+            ./src/parse.c \
+            ./src/main.c \
+            -L./vendor/raylib-6.0_linux_amd64/lib \
+            -l:libraylib.a \
+            -lm -lX11
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdviewer
+          path: mdviewer
