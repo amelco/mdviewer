@@ -1,0 +1,26 @@
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download built binary
+        uses: actions/download-artifact@v4
+        with:
+          name: mdviewer
+
+      - name: Upload Executable to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: mdviewer
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
